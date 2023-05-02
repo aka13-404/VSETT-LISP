@@ -1,7 +1,11 @@
+;;;P06 and P07 set in display (important for speed calc)
+(define p06 10)
+(define p07 28)
+
 ;;;UART configuration on COM-Port
 ;;;Refer to https://github.com/aka13-404/IO-Hawk-Legacy-Info for protocol details
 (uart-start 1200)
-(define display-packet (array-create type-byte 16))
+(define display-packet (array-create type-byte 16)); No idea why it does not work with 15
 (define packet-length 15)
 
 (define esc-packet (array-create type-byte 15))
@@ -36,6 +40,14 @@
 )
 ;;;debug end
 
+
+
+;;;Speed display
+(defun speed-calc () (* (* p07 (/ (get-speed) (* p06 3.1415 0.0254))) 1.52069))
+    ; get m/s, divide by wheel circumference in m to get rotation/s, multiply by magnets 
+    ;(we are going backwards to something a la erpm), multiply by unknown factor (please help me understand why that factor exists, check excel, run experiments)
+ 
+
 ;Calculate bitwise xor for all bytes
 (defun crc-calc (x)
     (progn
@@ -48,7 +60,7 @@
         
 
 
-
+;;; UART reader - reads data from display.
 
 (defun reader ()
     (loopwhile t
@@ -68,12 +80,19 @@
     )
 )
             
+
+;;; UART writer - writes data to display                        
+            
 (defun writer ()
     (loopwhile t
         (progn
             ;Counter in Byte 1
             (setvar 'counter (bufget-u8 esc-packet 1))
             (if (< counter 255) (bufset-u8 esc-packet 1 (+ counter 1)) (bufset-u8 esc-packet 1 0))
+            
+            ;Speed Byte 7 & 8
+            (bufset-u16 esc-packet 7 (speed-calc))
+            
             
             
             ;Encoding the 
