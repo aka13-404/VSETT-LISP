@@ -1,27 +1,33 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;                       Profiles                                       ;;;
+;;;                       User settings                                  ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;"Profile" settings: max-speed (km,h), motor-current 
-(define profile_1 [ 20 30 ])
-(define profile_2 [ 20 30 ])
-(define profile_3 [ 20 30 ])
-(define profile_S [ 20 30 ])
+; Kmh get rounded stupidly to m/s
+(define profile_1 (list 20 30))
+(define profile_2 (list 30 30))
+(define profile_3 (list 40 30))
+(define profile_S (list 60 30))
 
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;Set the id of the other VESC (no, not doing that automatically, for your safety)
+(define can_slave_id 58)
 
 
 ;;;P06 and P07 set in display (important for speed calc)
 (define p06 10)
-(define p07 28)
+(define p07 30) ;Should be same as magnets in vesc
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;Stuff below this line is for nerds, don't touch it if you don't know what you are doing
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;UART configuration on COM-Port
 ;;;Refer to https://github.com/aka13-404/IO-Hawk-Legacy-Info for protocol details
 (uart-start 1200)
-(define display-packet (array-create 16)); No idea why it does not work with 15
+(define display-packet (bufcreate 16)); No idea why it does not work with 15
 (define packet-length 15)
 
-(define esc-packet (array-create 15))
+(define esc-packet (bufcreate 15))
 (bufset-u8 esc-packet 0 0x36) ;Esc header
 
 (define encoding-key-array [
@@ -36,7 +42,14 @@
 
 (define encoded-bytes [ 3 4 5 7 8 9 10 11 12 13 ])
 
+(define last-gear 0)
+(define current-gear 0)
 
+;;; Convert human-readable speed into m/s speed
+(setix profile_1 0 (/ (ix profile_1 0) 3.6))
+(setix profile_2 0 (/ (ix profile_2 0) 3.6))
+(setix profile_3 0 (/ (ix profile_3 0) 3.6))
+(setix profile_S 0 (/ (ix profile_S 0) 3.6))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;                    Debug stuff                                       ;;;
@@ -65,9 +78,51 @@
     ; get m/s, divide by wheel circumference in m to get rotation/s, multiply by magnets 
     ;(we are going backwards to something a la erpm), multiply by unknown factor (please help me understand why that factor exists, check excel, run experiments)
  
- 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;       Converting data from display for the vesc functions            ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;Gets gear number and applies changes
+;Checks if gears have changed; If they changed, change some modes.
+(defun gear-calc (x)
+    (progn
+        (setvar 'current-gear x)
+        (if (!= last-gear current-gear)
+            (progn
+                (cond
+                    ((= current-gear 5) ; Gear 1
+                        (progn ;Here is a list of commands, which get run when profile change to 1
+                            (print 1)
+                            (set-param 'max-speed (ix profile_1 0))
+                        )
+                    )
+                    ((= current-gear 10) ; Gear 2
+                        (progn ;Here is a list of commands, which get run when profile change to 2
+                            (print 2)
+                            (set-param 'max-speed (ix profile_2 0))
+                        )
+                    )
+                    ((= current-gear 15) ; Gear 3
+                        (progn ;Here is a list of commands, which get run when profile change to 2
+                            (print 3)
+                            (set-param 'max-speed (ix profile_3 0))
+                        )
+                    )
+                )
+                (setvar 'last-gear current-gear)
+            )
+        )
+    )
+)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;                            Service functions                         ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 ;;; Checksum function
@@ -80,8 +135,20 @@
     )
 )
         
+(defun set-param (param value)
+    (progn
+        (conf-set param value)
+        (can-cmd can_slave_id (str-merge "(conf-set " "'" (sym2str param) " " (str-from-n value) ")"))
+    )
+)
 
 
+
+;;;Function to set config parameter to local and all specified vescs
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -98,7 +165,8 @@
                      (eq (bufget-u8 display-packet 14) (crc-calc display-packet))
                 );Byte0 = 1, Byte1 = 3, Checksum bitwise xor 0-13 byte
                 (progn
-                    ;(print "Packet received, everything good")
+                    ; Get gear from display
+                    (gear-calc (bufget-u8 display-packet 4))                    
                 )
                 (uart-read-bytes display-packet 1 0) ;Else: skip 1 byte forward
             )
@@ -140,6 +208,7 @@
     )
 )
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (spawn 150 reader)
 (spawn 150 writer) 
