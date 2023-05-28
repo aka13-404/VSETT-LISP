@@ -1,3 +1,16 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;                       Profiles                                       ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;"Profile" settings: max-speed (km,h), motor-current 
+(define profile_1 [ 20 30 ])
+(define profile_2 [ 20 30 ])
+(define profile_3 [ 20 30 ])
+(define profile_S [ 20 30 ])
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
 ;;;P06 and P07 set in display (important for speed calc)
 (define p06 10)
 (define p07 28)
@@ -5,10 +18,10 @@
 ;;;UART configuration on COM-Port
 ;;;Refer to https://github.com/aka13-404/IO-Hawk-Legacy-Info for protocol details
 (uart-start 1200)
-(define display-packet (array-create type-byte 16)); No idea why it does not work with 15
+(define display-packet (array-create 16)); No idea why it does not work with 15
 (define packet-length 15)
 
-(define esc-packet (array-create type-byte 15))
+(define esc-packet (array-create 15))
 (bufset-u8 esc-packet 0 0x36) ;Esc header
 
 (define encoding-key-array [
@@ -25,11 +38,12 @@
 
 
 
-;;;debug
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;                    Debug stuff                                       ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define debug 0)
 
 (defun print-bytes (x) 
-    ;;If I have to write that again just to print a byte array I don't know what I am going to do
     (progn
         (setvar 'debug-print-packet "")
         (looprange each 0 packet-length
@@ -38,17 +52,25 @@
         (print debug-print-packet)
     )
 )
-;;;debug end
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;       Converting data from vesc for the display functions            ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;Speed display
 (defun speed-calc () (* (* p07 (/ (get-speed) (* p06 3.1415 0.0254))) 1.52069))
     ; get m/s, divide by wheel circumference in m to get rotation/s, multiply by magnets 
     ;(we are going backwards to something a la erpm), multiply by unknown factor (please help me understand why that factor exists, check excel, run experiments)
  
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;Calculate bitwise xor for all bytes
+
+
+;;; Checksum function
 (defun crc-calc (x)
     (progn
         (setvar 'crc 0)
@@ -60,13 +82,17 @@
         
 
 
-;;; UART reader - reads data from display.
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;                        Reader and Writer                             ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; UART reader - reads data from display.
 (defun reader ()
     (loopwhile t
         (progn
             (uart-read-bytes display-packet packet-length 0)
-            ;(if (= debug 1) (print-bytes display-packet)); print received packet if debug on
             (if (and (eq (bufget-u8 display-packet 0) 1)
                      (eq (bufget-u8 display-packet 1) 3)
                      (eq (bufget-u8 display-packet 14) (crc-calc display-packet))
@@ -81,8 +107,7 @@
 )
             
 
-;;; UART writer - writes data to display                        
-            
+;;; UART writer - writes data to display                                    
 (defun writer ()
     (loopwhile t
         (progn
@@ -108,11 +133,9 @@
             ;Calculate checksum
             (bufset-u8 esc-packet 14 (crc-calc esc-packet))
                 
-            (if (= debug 1) (print enc-key))
-            (if (= debug 1) (print-bytes esc-packet))
             (uart-write esc-packet)
             (bufclear esc-packet 0 2)
-            (yield 450000)
+            (yield 450000) ;Stock esc sends a packet every 500ms, you can up the refresh rate
         )
     )
 )
