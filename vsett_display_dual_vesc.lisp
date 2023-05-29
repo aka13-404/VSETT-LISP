@@ -147,6 +147,7 @@
                 (setvar 'last-light light)
             )
         )
+        (print gear-history-array)
     )
 )
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -197,29 +198,21 @@
 
 ;;; UART reader - reads data from display.
 (define packet-length 15)
-(define counter_uart_in 0)
 
 (defun reader ()
     (loopwhile t
         (progn
-            (uart-read-bytes display-packet 1 counter_uart_in)
-            (setvar 'counter_uart_in (+ counter_uart_in 1))
-            (if (>= counter_uart_in packet-length) 
-                (progn               
-            
-                    (setvar 'counter_uart_in 0)
-                    (if (and (eq (bufget-u8 display-packet 0) 1)
-                        (eq (bufget-u8 display-packet 1) 3)
-                        (eq (bufget-u8 display-packet 14) (crc-calc display-packet))
-                        );Byte0 = 1, Byte1 = 3, Checksum bitwise xor 0-13 byte
-                        (progn
-                            ; Get gear from display
-                            (gear-calc (bufget-u8 display-packet 4) (if (= 8 (bitwise-and 8 (bufget-u8 display-packet 9))) 1 0))                   
-                        )
-                        (uart-read-bytes display-packet 1 0) ;Else: skip 1 byte forward
-                    )        
+            (uart-read-bytes display-packet packet-length 0)
+            (if (and (eq (bufget-u8 display-packet 0) 1)
+                     (eq (bufget-u8 display-packet 1) 3)
+                     (eq (bufget-u8 display-packet 14) (crc-calc display-packet))
+                );Byte0 = 1, Byte1 = 3, Checksum bitwise xor 0-13 byte
+                (progn
+                    ;(print "Packet received, everything good")
                 )
+                (uart-read-bytes display-packet 1 0) ;Else: skip 1 byte forward
             )
+            ;(print-bytes display-packet)
         )
     )
 )
@@ -250,7 +243,7 @@
                 
             (uart-write esc-packet)
             (bufclear esc-packet 0 2)
-            (yield 450000) ;Stock esc sends a packet every 500ms, you can up the refresh rate
+            (yield 250000) ;Stock esc sends a packet every 500ms, you can up the refresh rate
         )
     )
 )
