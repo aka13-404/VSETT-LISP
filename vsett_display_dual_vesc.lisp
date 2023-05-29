@@ -3,8 +3,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;"Profile" settings: max-speed (km,h), motor-current 
 ; Kmh get rounded stupidly to m/s
-(define profile_1 (list 5 10))
-(define profile_2 (list 10 20))
+(define profile_1 (list 10 20))
+(define profile_2 (list 15 30))
 (define profile_3 (list 22 40))
 (define profile_S2 (list 90 30))
 (define profile_S3 (list 100 90))
@@ -147,7 +147,7 @@
                 (setvar 'last-light light)
             )
         )
-        (print gear-history-array)
+        ;(print gear-history-array)
     )
 )
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -199,19 +199,47 @@
 ;;; UART reader - reads data from display.
 (define packet-length 15)
 
-(defun reader ()
+(defun reader-writer ()
     (loopwhile t
         (progn
+            ;;; Reader
             (uart-read-bytes display-packet packet-length 0)
             (if (and (eq (bufget-u8 display-packet 0) 1)
                      (eq (bufget-u8 display-packet 1) 3)
                      (eq (bufget-u8 display-packet 14) (crc-calc display-packet))
                 );Byte0 = 1, Byte1 = 3, Checksum bitwise xor 0-13 byte
                 (progn
-                    ;(print "Packet received, everything good")
+                    ;Get gear from display
+                    (gear-calc (bufget-u8 display-packet 4) (if (= 8 (bitwise-and 8 (bufget-u8 display-packet 9))) 1 0)) 
                 )
                 (uart-read-bytes display-packet 1 0) ;Else: skip 1 byte forward
             )
+            
+            ;;;Writer (hope it does not block)
+            ;Counter in Byte 1
+            (setvar 'counter (bufget-u8 esc-packet 1))
+            (if (< counter 255) (bufset-u8 esc-packet 1 (+ counter 1)) (bufset-u8 esc-packet 1 0))
+            
+            ;Speed Byte 7 & 8
+            (bufset-u16 esc-packet 7 (speed-calc))
+            
+            ;Encoding the 
+            ;Step 1 - get encoding key from table
+            (if (< (bufget-u8 esc-packet 1) 128)
+                (setvar 'enc-key (bufget-u8 encoding-key-array (bufget-u8 esc-packet 1)))
+                (setvar 'enc-key (bufget-u8 encoding-key-array (- (bufget-u8 esc-packet 1) 128)))
+            )
+            ;Step 2 - apply encoding key to every encoded byte, remove everything over 256 (propably should be written more human-friendly)   
+            (looprange each 0 (buflen encoded-bytes) (bufset-u8 esc-packet (bufget-u8 encoded-bytes each) (mod (+ (bufget-u8 esc-packet (bufget-u8 encoded-bytes each)) enc-key) 256)))
+                   
+            ;Calculate checksum
+            (bufset-u8 esc-packet 14 (crc-calc esc-packet))
+                
+            (uart-write esc-packet)
+            (bufclear esc-packet 0 2)
+            ;;;Writer end
+            
+            
             ;(print-bytes display-packet)
         )
     )
@@ -250,5 +278,5 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(spawn 150 reader)
-(spawn 150 writer) 
+(spawn 150 reader-writer)
+;(spawn 150 writer) 
