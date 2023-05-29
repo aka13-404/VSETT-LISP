@@ -3,10 +3,11 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;"Profile" settings: max-speed (km,h), motor-current 
 ; Kmh get rounded stupidly to m/s
-(define profile_1 (list 20 30))
-(define profile_2 (list 30 30))
-(define profile_3 (list 40 30))
-(define profile_S (list 60 30))
+(define profile_1 (list 5 10))
+(define profile_2 (list 10 20))
+(define profile_3 (list 22 40))
+(define profile_S2 (list 90 30))
+(define profile_S3 (list 100 90))
 
 ;;;Set the id of the other VESC (no, not doing that automatically, for your safety)
 (define can_slave_id 58)
@@ -16,8 +17,8 @@
 (define p06 10)
 (define p07 30) ;Should be same as magnets in vesc
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
+;;; Combo for two additional modes triggered by light on
+(define gear-key [1 2 3 2 3 2 3])
 ;Stuff below this line is for nerds, don't touch it if you don't know what you are doing
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -25,7 +26,6 @@
 ;;;Refer to https://github.com/aka13-404/IO-Hawk-Legacy-Info for protocol details
 (uart-start 1200)
 (define display-packet (bufcreate 16)); No idea why it does not work with 15
-(define packet-length 15)
 
 (define esc-packet (bufcreate 15))
 (bufset-u8 esc-packet 0 0x36) ;Esc header
@@ -42,14 +42,13 @@
 
 (define encoded-bytes [ 3 4 5 7 8 9 10 11 12 13 ])
 
-(define last-gear 0)
-(define current-gear 0)
 
 ;;; Convert human-readable speed into m/s speed
 (setix profile_1 0 (/ (ix profile_1 0) 3.6))
 (setix profile_2 0 (/ (ix profile_2 0) 3.6))
 (setix profile_3 0 (/ (ix profile_3 0) 3.6))
-(setix profile_S 0 (/ (ix profile_S 0) 3.6))
+(setix profile_S2 0 (/ (ix profile_S2 0) 3.6))
+(setix profile_S3 0 (/ (ix profile_S3 0) 3.6))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;                    Debug stuff                                       ;;;
@@ -88,32 +87,64 @@
 
 ;Gets gear number and applies changes
 ;Checks if gears have changed; If they changed, change some modes.
-(defun gear-calc (x)
+(define last-gear 0)
+(define last-light 0)
+(define profile_S_switch 0)
+
+(defun gear-calc (gear light)
     (progn
-        (setvar 'current-gear x)
-        (if (!= last-gear current-gear)
+        (if (!= last-gear gear)
             (progn
                 (cond
-                    ((= current-gear 5) ; Gear 1
+                    ((= gear 5) ; Gear 1
                         (progn ;Here is a list of commands, which get run when profile change to 1
-                            (print 1)
+                            (gear-history 1)
                             (set-param 'max-speed (ix profile_1 0))
+                            (set-param 'l-current-max (ix profile_1 1))
+                            (setvar 'profile_S_switch 0)
                         )
                     )
-                    ((= current-gear 10) ; Gear 2
-                        (progn ;Here is a list of commands, which get run when profile change to 2
-                            (print 2)
-                            (set-param 'max-speed (ix profile_2 0))
-                        )
+                    ((= gear 10) ; Gear 2
+                        (if (eq profile_S_switch 0) ;Here is a list of commands, which get run when profile change to 2 + S2
+                            (progn 
+                                (gear-history 2)
+                                (set-param 'max-speed (ix profile_2 0))
+                                (set-param 'l-current-max (ix profile_2 1))
+                            )
+                            (progn 
+                                (set-param 'max-speed (ix profile_S2 0))
+                                (set-param 'l-current-max (ix profile_S2 1))
+                            )
+                        )  
                     )
-                    ((= current-gear 15) ; Gear 3
-                        (progn ;Here is a list of commands, which get run when profile change to 2
-                            (print 3)
-                            (set-param 'max-speed (ix profile_3 0))
-                        )
+                    ((= gear 15) ; Gear 3
+                        (if (eq profile_S_switch 0) ;Here is a list of commands, which get run when profile change to 3 + S3
+                            (progn 
+                                (gear-history 3)
+                                (set-param 'max-speed (ix profile_3 0))
+                                (set-param 'l-current-max (ix profile_3 1))
+                            )
+                            (progn 
+                                (set-param 'max-speed (ix profile_S3 0))
+                                (set-param 'l-current-max (ix profile_S3 1))
+                            )
+                        ) 
                     )
                 )
-                (setvar 'last-gear current-gear)
+                (setvar 'last-gear gear)
+            )
+
+        )
+        (if (!= last-light light)
+            (progn
+                (if (and (eq light 1) (eq gear-key gear-history-array))
+                    (progn
+                        (setvar 'profile_S_switch 1)
+                        (setvar 'last-gear 228)
+                        (bufset-u8 esc-packet 4 32)
+                    )
+                )
+                (setvar 'last-light light)
             )
         )
     )
@@ -142,6 +173,15 @@
     )
 )
 
+;;; Function to store last
+(define gear-history-array [1 1 1 1 1 1 1])
+
+(defun gear-history (gear)
+    (progn ;Shifts values left, writes last value to the rightmost place
+        (loopforeach each (range 6) (bufset-u8 gear-history-array each (bufget-u8 gear-history-array (+ each 1))))
+        (bufset-u8 gear-history-array 6 gear)
+    )
+)
 
 
 ;;;Function to set config parameter to local and all specified vescs
@@ -156,19 +196,29 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;; UART reader - reads data from display.
+(define packet-length 15)
+(define counter_uart_in 0)
+
 (defun reader ()
     (loopwhile t
         (progn
-            (uart-read-bytes display-packet packet-length 0)
-            (if (and (eq (bufget-u8 display-packet 0) 1)
-                     (eq (bufget-u8 display-packet 1) 3)
-                     (eq (bufget-u8 display-packet 14) (crc-calc display-packet))
-                );Byte0 = 1, Byte1 = 3, Checksum bitwise xor 0-13 byte
-                (progn
-                    ; Get gear from display
-                    (gear-calc (bufget-u8 display-packet 4))                    
+            (uart-read-bytes display-packet 1 counter_uart_in)
+            (setvar 'counter_uart_in (+ counter_uart_in 1))
+            (if (>= counter_uart_in packet-length) 
+                (progn               
+            
+                    (setvar 'counter_uart_in 0)
+                    (if (and (eq (bufget-u8 display-packet 0) 1)
+                        (eq (bufget-u8 display-packet 1) 3)
+                        (eq (bufget-u8 display-packet 14) (crc-calc display-packet))
+                        );Byte0 = 1, Byte1 = 3, Checksum bitwise xor 0-13 byte
+                        (progn
+                            ; Get gear from display
+                            (gear-calc (bufget-u8 display-packet 4) (if (= 8 (bitwise-and 8 (bufget-u8 display-packet 9))) 1 0))                   
+                        )
+                        (uart-read-bytes display-packet 1 0) ;Else: skip 1 byte forward
+                    )        
                 )
-                (uart-read-bytes display-packet 1 0) ;Else: skip 1 byte forward
             )
         )
     )
@@ -186,8 +236,6 @@
             ;Speed Byte 7 & 8
             (bufset-u16 esc-packet 7 (speed-calc))
             
-            
-            
             ;Encoding the 
             ;Step 1 - get encoding key from table
             (if (< (bufget-u8 esc-packet 1) 128)
@@ -196,8 +244,7 @@
             )
             ;Step 2 - apply encoding key to every encoded byte, remove everything over 256 (propably should be written more human-friendly)   
             (looprange each 0 (buflen encoded-bytes) (bufset-u8 esc-packet (bufget-u8 encoded-bytes each) (mod (+ (bufget-u8 esc-packet (bufget-u8 encoded-bytes each)) enc-key) 256)))
-            
-            
+                   
             ;Calculate checksum
             (bufset-u8 esc-packet 14 (crc-calc esc-packet))
                 
