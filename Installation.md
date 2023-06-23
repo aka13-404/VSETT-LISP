@@ -106,6 +106,13 @@ This is the sequence of gears, which needs to be entered before enabling lights,
     1.It has to be 7 items long  
     2. You can not have same numbers following eachother, obviously  
 
+It works like this:
+1. You switch gears, in the order you entered in the script. Don't do it too fast - it does not register otherwise. About 2 switches per second are okay.
+2. You enable the lights, by holding the + button.
+3. The display blinks the (!) to let you know, that the sequence was accepted.
+4. Your gears 2 and 3 now use the parameters from profile_S2 and profile_S3 correspondingly. 
+5. Switching to gear 1 returns you to the usual profile 1-3.
+
  
 ### Step 6: Make sure everything works as expected
 
