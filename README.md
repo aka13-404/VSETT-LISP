@@ -16,15 +16,17 @@ As always, I'd like to kindly remind you, that everything you do you do on your 
 
 
 ### Limitations
-1. This script does nothing with lights, turnlights, horn and brakes.  
+
+1. The script **DOES NOT WORK** on 6.02. This is due to a bug with can-cmd in lisp present there. **You MUST use at least the 6.05 beta**, otherwisethe script will not be able to controll can-attached controllers.
+2. This script does nothing with lights, turnlights, horn and brakes.  
 VSETT/Kugoo uses a very strange, proprietary conector to connect to the esc. It's literally unbuyable and can not be found anywhere.  If you know where to buy the connector, let me know.  
 That means - you will need a different harness, or propably two separate harnesses, one for display, one for everything else. When I have the budget I will design a simple PCB with a couple of fets, and do a howto on hall sensor installation for the brake levers but right now the money simply isn't there.
 
-2. You will still need to crimp and/or solder, and require basic electric knowledge. This is not a software-only solution. 
+3. You will still need to crimp and/or solder, and require basic electric knowledge. This is not a software-only solution. 
 
-3. You will need to adjust a couple of parameters to your liking. I am not your mother, and I am not your tuner. It's up to you, what you want to do, and how you want to do it. I just already did the heavy lifting for you. 
+4. You will need to adjust a couple of parameters to your liking. I am not your mother, and I am not your tuner. It's up to you, what you want to do, and how you want to do it. I just already did the heavy lifting for you. 
 
-4. The display boots faster, than VESC controllers do. This means, that on every startup E10 will briefly flash. To clear the E00 from the screen it's enough to press the power button once.
+5. The display boots faster, than VESC controllers do. This means, that on every startup E10 will briefly flash. To clear the E00 from the screen it's enough to press the power button once.
 
 
 ### Current features
@@ -36,10 +38,10 @@ That means - you will need a different harness, or propably two separate harness
 ### Future features
 1. The gear selector will change any arbitrary parameters you provide in the config
 2. The display P-values could be used for changing some vesc parameters.
+3. Arbitrary length for the key for hidden modes
 
 ### Installation
-
-The installation and the needed materials are covered [here](Installation.md). 
+# The installation and the needed materials are covered [here](Installation.md). 
 
 
 
