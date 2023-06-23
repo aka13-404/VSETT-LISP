@@ -1,5 +1,5 @@
 ![Alt text](img/Title.png)
-# VSETT/Kaboo Display VESC(TM) Lisp connector
+# VSETT/Kaboo Display VESC(R) Lisp connector
 
 Disclaimer: Me, or this this project are not assotiated with either VESC® or Benjamin Vedder. VESC® is a registered trademark by Benjamin Vedder. You can visit the VESC® Project by [clicking this link here](https://vesc-project.com/).
 
