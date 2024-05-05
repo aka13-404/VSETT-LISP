@@ -1,7 +1,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;                       User settings                                  ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;"Profile" settings: max-speed (km,h), motor-current 
+;"Profile" settings: max-speed (km,h), motor-current
 ; Kmh get rounded stupidly to m/s
 (define profile_1 (list 10 20))
 (define profile_2 (list 15 30))
@@ -42,6 +42,8 @@
 
 (define encoded-bytes [ 3 4 5 7 8 9 10 11 12 13 ])
 
+(define crc 0)
+
 
 ;;; Convert human-readable speed into m/s speed
 (setix profile_1 0 (/ (ix profile_1 0) 3.6))
@@ -55,9 +57,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define debug 0)
 
-(defun print-bytes (x) 
+(defun print-bytes (x)
     (progn
-        (setvar 'debug-print-packet "")
+        (var 'debug-print-packet "")
         (looprange each 0 packet-length
                 (setvar 'debug-print-packet (str-merge debug-print-packet (str-from-n (bufget-u8 x each)) " "))
         )
@@ -74,9 +76,9 @@
 
 ;;;Speed display
 (defun speed-calc () (* (* p07 (/ (get-speed) (* p06 3.1415 0.0254))) 1.52069))
-    ; get m/s, divide by wheel circumference in m to get rotation/s, multiply by magnets 
+    ; get m/s, divide by wheel circumference in m to get rotation/s, multiply by magnets
     ;(we are going backwards to something a la erpm), multiply by unknown factor (please help me understand why that factor exists, check excel, run experiments)
- 
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -106,29 +108,29 @@
                     )
                     ((= gear 10) ; Gear 2
                         (if (eq profile_S_switch 0) ;Here is a list of commands, which get run when profile change to 2 + S2
-                            (progn 
+                            (progn
                                 (gear-history 2)
                                 (set-param 'max-speed (ix profile_2 0) can_slave_id_list)
                                 (set-param 'l-current-max (ix profile_2 1) can_slave_id_list)
                             )
-                            (progn 
+                            (progn
                                 (set-param 'max-speed (ix profile_S2 0) can_slave_id_list)
                                 (set-param 'l-current-max (ix profile_S2 1) can_slave_id_list)
                             )
-                        )  
+                        )
                     )
                     ((= gear 15) ; Gear 3
                         (if (eq profile_S_switch 0) ;Here is a list of commands, which get run when profile change to 3 + S3
-                            (progn 
+                            (progn
                                 (gear-history 3)
                                 (set-param 'max-speed (ix profile_3 0) can_slave_id_list)
                                 (set-param 'l-current-max (ix profile_3 1) can_slave_id_list)
                             )
-                            (progn 
+                            (progn
                                 (set-param 'max-speed (ix profile_S3 0) can_slave_id_list)
                                 (set-param 'l-current-max (ix profile_S3 1) can_slave_id_list)
                             )
-                        ) 
+                        )
                     )
                 )
                 (setvar 'last-gear gear)
@@ -161,7 +163,6 @@
 ;;; Checksum function
 (defun crc-calc (x)
     (progn
-        (setvar 'crc 0)
         (looprange each 0 (- packet-length 1)
             (setvar 'crc (bitwise-xor crc (bufget-u8 x each)))
         )
@@ -204,43 +205,47 @@
 (define packet-length 15)
 
 (defun writer ()
-    (loopwhile t
-        (progn
-            ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-            ;;;Writer (hope it does not block)
-            ;Counter in Byte 1
-            (setvar 'counter (bufget-u8 esc-packet 1))
-            (if (< counter 255) (bufset-u8 esc-packet 1 (+ counter 1)) (bufset-u8 esc-packet 1 0))
-            
-            ;Speed Byte 7 & 8
-            (bufset-u16 esc-packet 7 (speed-calc))
-            
-            ;Encoding the 
-            ;Step 1 - get encoding key from table
-            (if (< (bufget-u8 esc-packet 1) 128)
-                (setvar 'enc-key (bufget-u8 encoding-key-array (bufget-u8 esc-packet 1)))
-                (setvar 'enc-key (bufget-u8 encoding-key-array (- (bufget-u8 esc-packet 1) 128)))
+    (progn
+        (var counter 0)
+        (var enc-key 0)
+        (loopwhile t
+            (progn
+                ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                ;;;Writer (hope it does not block)
+                ;Counter in Byte 1
+                (setvar 'counter (bufget-u8 esc-packet 1))
+                (if (< counter 255) (bufset-u8 esc-packet 1 (+ counter 1)) (bufset-u8 esc-packet 1 0))
+
+                ;Speed Byte 7 & 8
+                (bufset-u16 esc-packet 7 (speed-calc))
+
+                ;Encoding the
+                ;Step 1 - get encoding key from table
+                (if (< (bufget-u8 esc-packet 1) 128)
+                    (setvar 'enc-key (bufget-u8 encoding-key-array (bufget-u8 esc-packet 1)))
+                    (setvar 'enc-key (bufget-u8 encoding-key-array (- (bufget-u8 esc-packet 1) 128)))
+                )
+                ;Step 2 - apply encoding key to every encoded byte, remove everything over 256 (propably should be written more human-friendly)
+                (looprange each 0 (buflen encoded-bytes) (bufset-u8 esc-packet (bufget-u8 encoded-bytes each) (mod (+ (bufget-u8 esc-packet (bufget-u8 encoded-bytes each)) enc-key) 256)))
+
+                ;Calculate checksum
+                (bufset-u8 esc-packet 14 (crc-calc esc-packet))
+
+
+
+                (uart-write esc-packet)
+                (sleep 0.05);No idea why it is necessary; Breaks
+                ;Send packet to display
+                (bufclear esc-packet 0 2)
+
+                (yield 150000)
+                ;;;Writer end
+
             )
-            ;Step 2 - apply encoding key to every encoded byte, remove everything over 256 (propably should be written more human-friendly)   
-            (looprange each 0 (buflen encoded-bytes) (bufset-u8 esc-packet (bufget-u8 encoded-bytes each) (mod (+ (bufget-u8 esc-packet (bufget-u8 encoded-bytes each)) enc-key) 256)))
-                   
-            ;Calculate checksum
-            (bufset-u8 esc-packet 14 (crc-calc esc-packet))
-                
-                
-                
-            (uart-write esc-packet)
-            (sleep 0.05);No idea why it is necessary; Breaks 
-            ;Send packet to display
-            (bufclear esc-packet 0 2)
-            
-            (yield 150000)
-            ;;;Writer end
-            
         )
     )
 )
-            
+
 (defun reader ()
     (loopwhile t
         (progn
@@ -257,25 +262,25 @@
                              ;If the remaining has coherent checksum, do stuff:
                                 (progn
                                     ;Read gears and lamp status for the gear switcher
-                                    (gear-calc (bufget-u8 display-packet 4) (if (= 8 (bitwise-and 8 (bufget-u8 display-packet 9))) 1 0)) 
+                                    (gear-calc (bufget-u8 display-packet 4) (if (= 8 (bitwise-and 8 (bufget-u8 display-packet 9))) 1 0))
                                     (yield 75000)
                                 )
                              )
                         )
                     )
-                    
+
                 )
             )
-            
-            
-            
+
+
+
             ;For debug purposes - prints whatever was received that cycle
             ;(print-bytes display-packet)
             ;(print-bytes esc-packet)
         )
     )
-)            
-            
+)
+
 
 
 
@@ -283,4 +288,4 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (spawn 150 reader)
-(spawn 150 writer) 
+(spawn 150 writer)
