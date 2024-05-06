@@ -27,9 +27,12 @@
 (uart-start 1200)
 (define display-packet (bufcreate 16)); No idea why it does not work with 15
 
+(define packet-length 15)
+
 (define esc-packet (bufcreate 15))
 (bufset-u8 esc-packet 0 0x36) ;Esc header
 
+;todo - explain in the main docks where the key comes from, explain how it works
 (define encoding-key-array [
     0x5e 0x23 0x5c 0x21 0x2a 0x2f 0x28 0x2d 0x26 0x2b 0x24 0x29 0x52 0x57 0x50 0x55
     0x4e 0x53 0x4c 0x51 0x5a 0x5f 0x58 0x5d 0x56 0x5b 0x54 0x59 0x02 0x07 0x00 0x05
@@ -42,7 +45,6 @@
 
 (define encoded-bytes [ 3 4 5 7 8 9 10 11 12 13 ])
 
-(define crc 0)
 
 
 ;;; Convert human-readable speed into m/s speed
@@ -59,7 +61,7 @@
 
 (defun print-bytes (x)
     (progn
-        (var 'debug-print-packet "")
+        (var debug-print-packet "")
         (looprange each 0 packet-length
                 (setvar 'debug-print-packet (str-merge debug-print-packet (str-from-n (bufget-u8 x each)) " "))
         )
@@ -163,6 +165,7 @@
 ;;; Checksum function
 (defun crc-calc (x)
     (progn
+    (var crc 0) ; checksum resets each loop
         (looprange each 0 (- packet-length 1)
             (setvar 'crc (bitwise-xor crc (bufget-u8 x each)))
         )
@@ -179,7 +182,7 @@
     )
 )
 
-;;; Function to store last
+;;; Function to store last gears selected
 (define gear-history-array [1 1 1 1 1 1 1])
 
 (defun gear-history (gear)
@@ -189,29 +192,21 @@
     )
 )
 
-
-
-
-
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;                        Reader and Writer                             ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;;; UART reader - reads data from display.
-(define packet-length 15)
-
+;;;Writer - writes to display
 (defun writer ()
     (progn
         (var counter 0)
         (var enc-key 0)
         (loopwhile t
             (progn
-                ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-                ;;;Writer (hope it does not block)
                 ;Counter in Byte 1
                 (setvar 'counter (bufget-u8 esc-packet 1))
                 (if (< counter 255) (bufset-u8 esc-packet 1 (+ counter 1)) (bufset-u8 esc-packet 1 0))
@@ -230,8 +225,7 @@
 
                 ;Calculate checksum
                 (bufset-u8 esc-packet 14 (crc-calc esc-packet))
-
-
+                
 
                 (uart-write esc-packet)
                 (sleep 0.05);No idea why it is necessary; Breaks
@@ -246,11 +240,10 @@
     )
 )
 
+;;;Reader
 (defun reader ()
     (loopwhile t
         (progn
-            ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-            ;;;Reader
             (uart-read-bytes display-packet 1 0)    ;Read first byte
             (if (eq (bufget-u8 display-packet 0) 1)    ;If first byte 1, read one more
                 (progn
@@ -271,21 +264,12 @@
 
                 )
             )
-
-
-
-            ;For debug purposes - prints whatever was received that cycle
-            ;(print-bytes display-packet)
-            ;(print-bytes esc-packet)
         )
     )
 )
 
-
-
-
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;Starts reader and writer
 (spawn 150 reader)
 (spawn 150 writer)
