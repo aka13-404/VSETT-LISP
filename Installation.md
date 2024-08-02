@@ -139,7 +139,11 @@ If you are interested in the placement on the pcb, I have retraced it [here](img
 
 It looks way scarier than it is. We still have the a23a with the EN leg. If the switch is flipped to the right, the EN leg is connected to the close-enough-to-reference-implementation from Benjamin, which is useless for us. It works in reverse, by being constantly on, and using short-term button presses to GND to turn off, and turn on on wheel movement. No idea what it was made for, propably those longboards?
 
-But dont fret! **If the switch is to the left, you guessed it, the EN is floating as usual!** That means you can simply follow the process outlined before, with calculating a divider. The only difference - **you solder not to the leg directly, but to the "always on" part of the switch** After you have calculated everything, simply solder a wire to the floating part of the switch, and flip it to the left. The mode of operations can now be switched at will when needed between the reference implementation of Benjamin, and our desired "ignite" configuration.
+But don't fret! **If the switch is to the left, you guessed it, the EN is floating as usual!** That means you can simply follow the process outlined before, with calculating a divider. The only difference - **you solder not to the leg directly, but to the "always on" part of the switch** After you have calculated everything, simply solder a wire to the floating part of the switch, and flip it to the left. The mode of operations can now be switched at will when needed between the reference implementation of Benjamin, and our desired "ignite" configuration.
+
+Here is the principal schematic, on what it should look like:
+
+![Makerbase84100](img/Connection_noignite_84100.drawio.png)
 
 Sadly, this time, there is no nice space to place the resistors. For my projects I usually run 2 escs, so I decided to simply place both dividers (one for the throttle, another for the enable) on a separate pcb I connect the screen to.
 Ignore the size, I simply have a "standard" breadboard holder for my experiments. You really only need a very small piece.
